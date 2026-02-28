@@ -3,7 +3,7 @@ name: Update market data (Polygon)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '15 * * * 1-5' # hourly on weekdays
+    - cron: '20 */4 * * 1-5' # every 4 hours on weekdays
 
 permissions:
   contents: write
