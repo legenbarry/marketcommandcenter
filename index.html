@@ -90,6 +90,8 @@ tr.bench-row td{border-bottom:1px solid rgba(255,51,85,0.12)!important}
 /* ── TABLE CARD ── */
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:9px}
 .card-lbl{padding:7px 11px;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--accent);background:var(--bg3);border-bottom:1px solid var(--border);font-weight:500}
+.card-lbl-toggle{width:100%;text-align:left;background:var(--bg3);border:none;cursor:pointer;font-family:var(--mono)}
+.card-lbl-toggle:hover{color:var(--text)}
 table{width:100%;border-collapse:collapse}
 thead th{padding:6px 10px;text-align:right;font-size:9.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);background:var(--bg3);border-bottom:1px solid var(--border);font-weight:500}
 thead th:first-child,thead th.l{text-align:left}
@@ -328,9 +330,11 @@ td:first-child,td.l{text-align:left}
 
   <!-- Sub-market -->
   <div class="card" style="margin-bottom:9px">
-    <div class="card-lbl">▸ S&P 500 Sub-Market Performance — Ranked by 1W</div>
-    <table><thead><tr><th class="l">#</th><th class="l">Sub-Market / ETF</th><th>Price</th><th>1D%</th><th>1W%</th><th>52W Hi%</th><th>YTD%</th><th>5D</th><th>Trend</th></tr></thead>
-    <tbody id="t-submarket"><tr><td colspan="9" class="loading">Loading...</td></tr></tbody></table>
+    <button class="card-lbl card-lbl-toggle" id="submarketToggle" onclick="toggleSubmarketCard()">▸ S&P 500 Sub-Market Performance — Ranked by 1W</button>
+    <div id="submarketContent" style="display:none">
+      <table><thead><tr><th class="l">#</th><th class="l">Sub-Market / ETF</th><th>Price</th><th>1D%</th><th>1W%</th><th>52W Hi%</th><th>YTD%</th><th>5D</th><th>Trend</th></tr></thead>
+      <tbody id="t-submarket"><tr><td colspan="9" class="loading">Loading...</td></tr></tbody></table>
+    </div>
   </div>
 
   <!-- Sectors side by side -->
@@ -941,6 +945,15 @@ function toggleH(id,sym){
   if(!row)return;
   const open=btn.classList.toggle('open');
   row.classList.toggle('show',open);
+}
+
+function toggleSubmarketCard(){
+  const body=document.getElementById('submarketContent');
+  const btn=document.getElementById('submarketToggle');
+  if(!body||!btn) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  btn.textContent = `${isOpen ? '▸' : '▾'} S&P 500 Sub-Market Performance — Ranked by 1W`;
 }
 
 // ═══════════════════════════════════════════════════════
