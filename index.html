@@ -1035,7 +1035,19 @@ async function loadData(){
     const resp = await fetch('data/data.json?_='+Date.now());
     if(!resp.ok) throw new Error('No data.json yet');
     DATA = await resp.json();
+    const keys=['futures','dxvix','metals','commod','yields','global','etfmain','submarket','sector','sectorew','thematic','country','crypto'];
+    let patched=false;
+    keys.forEach(k=>{
+      if(!Array.isArray(DATA[k]) || DATA[k].length===0){
+        DATA[k]=(k==='crypto')?CRYPTO_DEMO:(Array.isArray(DEMO[k])?DEMO[k]:[]);
+        patched=true;
+      }
+    });
     renderAll(DATA);
+    if(patched){
+      document.getElementById('dataStatus').textContent='⚠ Live feed partially unavailable — showing fallback rows for missing sections';
+      document.getElementById('dataStatus').style.color='var(--amber)';
+    }
     loadMortgageRates();
   } catch(e) {
     // Fallback: render DEMO data with a warning banner

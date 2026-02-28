@@ -34,16 +34,16 @@ PROXY = {
 SECTIONS = {
     "futures":   ["ES1!","NQ1!","RTY1!","YM1!"],
     "dxvix":     ["DX-Y.NYB","CBOE:VIX"],
-    "metals":    ["GC1!","SI1!","HG1!","PL1!","PA1!","ALI1!"],
+    "metals":    ["GC1!","SI1!","HG1!","PL1!"],
     "commod":    ["CL1!","NG1!"],
     "yields":    ["US2Y","US10Y","US30Y"],
-    "global":    ["^N225","^KS11","^NSEI","000001.SS","000300.SS","^HSI","^FTSE","^FCHI","^GDAXI"],
+    "global":    ["^N225","^KS11","^NSEI","^HSI","^FTSE","^FCHI","^GDAXI"],
     "etfmain":   ["SPY","QQQ","DIA","IWM"],
-    "submarket": ["IVW","IVE","IJK","IJJ","IJT","IJS","MGK","VUG","VTV"],
-    "sector":    ["XLK","XLV","XLF","XLE","XLY","XLI","XLB","XLU","XLRE","XLC","XLP"],
-    "sectorew":  ["RYT","RYH","RYF","RYE","RCD","RGI","RTM","RYU","EWRE","EWCO","RHS"],
-    "thematic":  ["BOTZ","HACK","SOXX","ICLN","SKYY","XBI","ITA","FINX","ARKG","URA","AIQ","CIBR","ROBO","ARKK","DRIV","OGIG","ACES","PAVE","HERO","CLOU"],
-    "country":   ["EWJ","EWY","INDA","MCHI","GXC","EWH","EWU","EWQ","EWG","EWZ","EWT","EWA","EWC","EWL","EWP","EWS","TUR","EWM","EPHE","THD","VNM","EWI","EWN","EWD","EWK","EWO"],
+    "submarket": ["IVW","IVE","IJK","IJJ","IJT","IJS"],
+    "sector":    ["XLK","XLV","XLF","XLE","XLY","XLI","XLB","XLU"],
+    "sectorew":  ["RYT","RYH","RYF","RYE","RCD","RYU"],
+    "thematic":  ["BOTZ","HACK","SOXX","ICLN","SKYY","XBI","ITA","FINX","ARKK","CIBR"],
+    "country":   ["EWJ","EWY","INDA","MCHI","EWH","EWU","EWQ","EWG","EWZ","EWT"],
 }
 
 CRYPTO = [
@@ -143,7 +143,7 @@ def yahoo_metrics(ticker):
             f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1y&interval=1d",
             headers={"User-Agent": "marketcommandcenter/1.0"},
         )
-        with urlopen(req, timeout=25) as r:
+        with urlopen(req, timeout=6) as r:
             d = json.loads(r.read().decode("utf-8"))
         res = (d.get("chart") or {}).get("result") or []
         if not res:
@@ -162,13 +162,53 @@ def yahoo_metrics(ticker):
         return None
 
 
+def stooq_metrics(ticker):
+    try:
+        st = ticker.lower().replace('.', '-') + '.us'
+        req = Request(
+            f"https://stooq.com/q/d/l/?s={st}&i=d",
+            headers={"User-Agent": "marketcommandcenter/1.0"},
+        )
+        with urlopen(req, timeout=8) as r:
+            csv = r.read().decode("utf-8")
+        lines = csv.strip().split("\n")
+        if len(lines) < 3:
+            return None
+        cls, tms = [], []
+        for ln in lines[1:]:
+            parts = ln.split(',')
+            if len(parts) < 5:
+                continue
+            d, c = parts[0], parts[4]
+            if c in ('', 'N/D'):
+                continue
+            y, m, dd = d.split('-')
+            dt = datetime(int(y), int(m), int(dd), tzinfo=timezone.utc)
+            cls.append(float(c))
+            tms.append(int(dt.timestamp() * 1000))
+        if len(cls) < 2:
+            return None
+        return metrics_from_closes(cls, tms)
+    except Exception:
+        return None
+
+
 def metrics_for(ticker, cache):
+    # Fast/stable path first to avoid Polygon bottlenecks
+    m = yahoo_metrics(ticker)
+    if m:
+        return m
+    m = stooq_metrics(ticker)
+    if m:
+        return m
+
+    # Last resort: Polygon
     rows = bars_for(ticker, cache)
     closes = [r.get("c") for r in rows if r.get("c") is not None]
     if len(closes) >= 2:
         ts = [r.get("t") for r in rows if r.get("c") is not None and r.get("t") is not None]
         return metrics_from_closes(closes, ts)
-    return yahoo_metrics(ticker)
+    return None
 
 
 def sources_for(sym):
@@ -285,7 +325,7 @@ def crypto_rows(seed, cache):
             "spark": spark,
         })
         out.append(row)
-        time.sleep(0.35)
+        time.sleep(0.05)
 
     return out
 
