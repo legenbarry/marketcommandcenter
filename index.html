@@ -1035,7 +1035,21 @@ async function loadData(){
     const resp = await fetch('data/data.json?_='+Date.now());
     if(!resp.ok) throw new Error('No data.json yet');
     DATA = await resp.json();
+    // If upstream live file has empty sections, backfill from DEMO so dashboard stays populated
+    const keys=['futures','dxvix','metals','commod','yields','global','etfmain','submarket','sector','sectorew','thematic','country','crypto'];
+    let usedBackfill=false;
+    keys.forEach(k=>{
+      if(!Array.isArray(DATA[k]) || DATA[k].length===0){
+        if(k==='crypto') DATA[k]=CRYPTO_DEMO;
+        else if(Array.isArray(DEMO[k])) DATA[k]=DEMO[k];
+        usedBackfill=true;
+      }
+    });
     renderAll(DATA);
+    if(usedBackfill){
+      document.getElementById('dataStatus').textContent='⚠ Live feed partial — some sections backfilled with demo universe';
+      document.getElementById('dataStatus').style.color='var(--amber)';
+    }
   } catch(e) {
     // Fallback: render DEMO data with a warning banner
     console.warn('data/data.json not found, showing demo data:', e.message);
