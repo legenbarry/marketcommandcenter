@@ -452,6 +452,23 @@ td:first-child,td.l{text-align:left}
   </div>
 </div>
 
+<div class="divider"></div>
+
+<!-- SECTION 5: MORTGAGE RATES                             -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="sec" id="s5">
+  <div class="sec-hdr">
+    <div class="sec-n">05</div>
+    <div class="sec-t">US Mortgage Rates</div>
+    <div class="sec-sub">15Y & 30Y · FREDDIE MAC (FRED)</div>
+  </div>
+  <div class="card">
+    <div class="card-lbl">▸ Mortgage Rate Tracker</div>
+    <table><thead><tr><th class="l">Tenor</th><th>Latest Rate</th><th>1W Δ</th><th>Trend</th><th class="l">Last Update</th></tr></thead>
+    <tbody id="t-mortgage"><tr><td colspan="5" class="loading">Loading mortgage rates...</td></tr></tbody></table>
+  </div>
+</div>
+
 </div><!-- /wrap -->
 <!-- ══ TRADINGVIEW CHART MODAL ════════════════════ -->
 <div id="tv-modal" onclick="if(event.target===this)closeChart()">
@@ -1204,13 +1221,51 @@ function renderBreadth(d) {
 }
 
 // ═══════════════════════════════════════════════════════
+// MORTGAGE RATES (FRED)
+// ═══════════════════════════════════════════════════════
+async function loadMortgageRates(){
+  const tbody=document.getElementById('t-mortgage');
+  if(!tbody) return;
+
+  async function fredSeries(seriesId){
+    const url=`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${seriesId}`;
+    const txt=await fetch(url,{cache:'no-store'}).then(r=>r.text());
+    const lines=txt.trim().split('\n').slice(1);
+    const rows=lines.map(l=>{const [d,v]=l.split(',');return {date:d,val:v==='.'?null:parseFloat(v)}}).filter(x=>x.val!==null);
+    const latest=rows[rows.length-1];
+    const w1=rows[Math.max(0,rows.length-2)] || latest;
+    return {latest,w1};
+  }
+
+  try{
+    const [m15,m30]=await Promise.all([fredSeries('MORTGAGE15US'),fredSeries('MORTGAGE30US')]);
+    const mk=(label,obj)=>{
+      const d1=(obj.latest.val-obj.w1.val)*100; // bps
+      const tr=d1>0?'<span class="dn">▲ Rising</span>':d1<0?'<span class="up">▼ Falling</span>':'<span class="neu">→ Flat</span>';
+      return `<tr>
+        <td class="l"><span class="tn">${label}</span></td>
+        <td><span class="tn">${obj.latest.val.toFixed(2)}%</span></td>
+        <td>${bps(d1)}</td>
+        <td>${tr}</td>
+        <td class="l"><span class="ts">${obj.latest.date}</span></td>
+      </tr>`;
+    };
+    tbody.innerHTML = mk('15-Year Fixed (US)',m15) + mk('30-Year Fixed (US)',m30);
+  }catch(e){
+    tbody.innerHTML='<tr><td colspan="5" class="loading">Mortgage rate feed unavailable right now.</td></tr>';
+  }
+}
+
+// ═══════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════
 window.addEventListener('load',()=>{
   loadData();
+  loadMortgageRates();
   calc();
   // Silent re-fetch every 60 min in case the daily data has refreshed
   setInterval(loadData, 60 * 60 * 1000);
+  setInterval(loadMortgageRates, 6 * 60 * 60 * 1000);
 });
 
 // ═══════════════════════════════════════════════════════
