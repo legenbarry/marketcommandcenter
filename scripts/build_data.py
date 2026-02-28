@@ -47,10 +47,10 @@ SECTIONS = {
 }
 
 CRYPTO = [
-    ("bitcoin", "BTC", "Bitcoin", "X:BTCUSD", "IBIT"),
-    ("ethereum", "ETH", "Ethereum", "X:ETHUSD", "ETHA"),
-    ("solana", "SOL", "Solana", "X:SOLUSD", "SOLQ"),
-    ("ripple", "XRP", "Ripple", "X:XRPUSD", "XXRP"),
+    ("bitcoin", "BTC", "Bitcoin"),
+    ("ethereum", "ETH", "Ethereum"),
+    ("solana", "SOL", "Solana"),
+    ("ripple", "XRP", "Ripple"),
 ]
 
 
@@ -159,24 +159,84 @@ def merge_section(seed_rows, symbols, cache):
     return out
 
 
+def gecko_json(url):
+    req = Request(url, headers={"User-Agent": "marketcommandcenter/1.0"})
+    wait = 0.8
+    for _ in range(6):
+      try:
+        with urlopen(req, timeout=30) as r:
+            return json.loads(r.read().decode("utf-8"))
+      except HTTPError as e:
+        if e.code in (429, 500, 502, 503, 504):
+            time.sleep(wait)
+            wait *= 1.8
+            continue
+        raise
+    raise RuntimeError("CoinGecko API request failed")
+
+
 def crypto_rows(seed, cache):
     by_sym = {r.get("sym"): r for r in seed}
     out = []
-    for cid, sym, name, spot, etf_proxy in CRYPTO:
-        m = metrics_for(spot, cache)
-        if not m:
-            m = metrics_for(etf_proxy, cache)
-        if not m:
+
+    ids = ",".join([c[0] for c in CRYPTO])
+    spot = gecko_json(
+        f"https://api.coingecko.com/api/v3/simple/price?ids={ids}&vs_currencies=usd&include_24hr_change=true"
+    )
+
+    jan1 = datetime(date.today().year, 1, 1, tzinfo=timezone.utc)
+
+    for cid, sym, name in CRYPTO:
+        base = by_sym.get(sym, {"id": cid, "sym": sym, "name": name})
+        row = dict(base)
+
+        # 365d daily series for w1 / 52w high / ytd / spark
+        hist = gecko_json(
+            f"https://api.coingecko.com/api/v3/coins/{cid}/market_chart?vs_currency=usd&days=365&interval=daily"
+        )
+        prices = hist.get("prices", [])
+        closes = [p[1] for p in prices if p and len(p) >= 2]
+        times = [p[0] for p in prices if p and len(p) >= 2]
+
+        if not closes:
+            # keep prior row if source fails
             if sym in by_sym:
                 out.append(by_sym[sym])
             continue
-        base = by_sym.get(sym, {"id": cid, "sym": sym, "name": name})
-        row = dict(base)
-        row.update(m)
-        row["id"] = cid
-        row["sym"] = sym
-        row["name"] = row.get("name") or name
+
+        last = float(spot.get(cid, {}).get("usd", closes[-1]))
+        d1 = float(spot.get(cid, {}).get("usd_24h_change", 0.0) or 0.0)
+        week_base = closes[-8] if len(closes) >= 8 else closes[0]
+        high52 = max(closes)
+
+        ytd_base = closes[0]
+        for ts, c in zip(times, closes):
+            dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+            if dt >= jan1:
+                ytd_base = c
+                break
+
+        tail = closes[-5:] if len(closes) >= 5 else closes + [closes[-1]] * (5 - len(closes))
+        spark = []
+        prv = tail[0]
+        for c in tail:
+            spark.append(round((0.0 if prv in (0, None) else ((c / prv) - 1) * 100.0), 2))
+            prv = c
+
+        row.update({
+            "id": cid,
+            "sym": sym,
+            "name": row.get("name") or name,
+            "price": round(last, 2 if last >= 100 else 4),
+            "d1": round(d1, 2),
+            "w1": pct(last, week_base) or 0.0,
+            "hi52": pct(last, high52) or 0.0,
+            "ytd": pct(last, ytd_base) or 0.0,
+            "spark": spark,
+        })
         out.append(row)
+        time.sleep(0.35)
+
     return out
 
 
