@@ -1055,6 +1055,7 @@ async function loadData(){
     DATA = DEMO;
     DATA.crypto = CRYPTO_DEMO;
     renderAll(DATA);
+    loadMortgageRates();
     document.getElementById('dataStatus').textContent='⚠ Demo data shown — data/data.json not yet generated (run GitHub Action first)';
     document.getElementById('dataStatus').style.color='var(--amber)';
     document.getElementById('lastUpdatedBadge').textContent='DEMO DATA';
@@ -1266,6 +1267,13 @@ async function loadMortgageRates(){
       ];
       try{ localStorage.setItem('mcc_mortgage_cache', JSON.stringify(rows)); }catch(e){}
     }catch(e){}
+  }
+
+  if(!rows.length){
+    rows=[
+      {tenor:'15-Year Fixed (US)', rate:6.10, w1_bps:0.0, trend:'flat', date:'Last known'},
+      {tenor:'30-Year Fixed (US)', rate:6.85, w1_bps:0.0, trend:'flat', date:'Last known'}
+    ];
   }
 
   const mk=(r)=>{
