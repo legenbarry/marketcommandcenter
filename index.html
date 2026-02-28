@@ -1036,6 +1036,7 @@ async function loadData(){
     if(!resp.ok) throw new Error('No data.json yet');
     DATA = await resp.json();
     renderAll(DATA);
+    loadMortgageRates();
   } catch(e) {
     // Fallback: render DEMO data with a warning banner
     console.warn('data/data.json not found, showing demo data:', e.message);
@@ -1223,37 +1224,25 @@ function renderBreadth(d) {
 // ═══════════════════════════════════════════════════════
 // MORTGAGE RATES (FRED)
 // ═══════════════════════════════════════════════════════
-async function loadMortgageRates(){
+function loadMortgageRates(){
   const tbody=document.getElementById('t-mortgage');
   if(!tbody) return;
-
-  async function fredSeries(seriesId){
-    const url=`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${seriesId}`;
-    const txt=await fetch(url,{cache:'no-store'}).then(r=>r.text());
-    const lines=txt.trim().split('\n').slice(1);
-    const rows=lines.map(l=>{const [d,v]=l.split(',');return {date:d,val:v==='.'?null:parseFloat(v)}}).filter(x=>x.val!==null);
-    const latest=rows[rows.length-1];
-    const w1=rows[Math.max(0,rows.length-2)] || latest;
-    return {latest,w1};
+  const rows=(DATA&&Array.isArray(DATA.mortgage))?DATA.mortgage:[];
+  if(!rows.length){
+    tbody.innerHTML='<tr><td colspan="5" class="loading">Mortgage rates pending next data refresh.</td></tr>';
+    return;
   }
-
-  try{
-    const [m15,m30]=await Promise.all([fredSeries('MORTGAGE15US'),fredSeries('MORTGAGE30US')]);
-    const mk=(label,obj)=>{
-      const d1=(obj.latest.val-obj.w1.val)*100; // bps
-      const tr=d1>0?'<span class="dn">▲ Rising</span>':d1<0?'<span class="up">▼ Falling</span>':'<span class="neu">→ Flat</span>';
-      return `<tr>
-        <td class="l"><span class="tn">${label}</span></td>
-        <td><span class="tn">${obj.latest.val.toFixed(2)}%</span></td>
-        <td>${bps(d1)}</td>
-        <td>${tr}</td>
-        <td class="l"><span class="ts">${obj.latest.date}</span></td>
-      </tr>`;
-    };
-    tbody.innerHTML = mk('15-Year Fixed (US)',m15) + mk('30-Year Fixed (US)',m30);
-  }catch(e){
-    tbody.innerHTML='<tr><td colspan="5" class="loading">Mortgage rate feed unavailable right now.</td></tr>';
-  }
+  const mk=(r)=>{
+    const tr=r.w1_bps>0?'<span class="dn">▲ Rising</span>':r.w1_bps<0?'<span class="up">▼ Falling</span>':'<span class="neu">→ Flat</span>';
+    return `<tr>
+      <td class="l"><span class="tn">${r.tenor}</span></td>
+      <td><span class="tn">${Number(r.rate).toFixed(2)}%</span></td>
+      <td>${bps(Number(r.w1_bps)||0)}</td>
+      <td>${tr}</td>
+      <td class="l"><span class="ts">${r.date||''}</span></td>
+    </tr>`;
+  };
+  tbody.innerHTML=rows.map(mk).join('');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1261,11 +1250,9 @@ async function loadMortgageRates(){
 // ═══════════════════════════════════════════════════════
 window.addEventListener('load',()=>{
   loadData();
-  loadMortgageRates();
   calc();
   // Silent re-fetch every 60 min in case the daily data has refreshed
   setInterval(loadData, 60 * 60 * 1000);
-  setInterval(loadMortgageRates, 6 * 60 * 60 * 1000);
 });
 
 // ═══════════════════════════════════════════════════════

@@ -240,6 +240,33 @@ def crypto_rows(seed, cache):
     return out
 
 
+def fetch_mortgage_rows():
+    def fred_series(series_id):
+        # use raw urllib for CSV
+        req = Request(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}", headers={"User-Agent": "marketcommandcenter/1.0"})
+        with urlopen(req, timeout=30) as r:
+            csv = r.read().decode("utf-8")
+        rows = []
+        for line in csv.strip().split("\n")[1:]:
+            d, v = line.split(",")
+            if v == '.':
+                continue
+            rows.append((d, float(v)))
+        return rows
+
+    out = []
+    for sid, label in [("MORTGAGE15US", "15-Year Fixed (US)"), ("MORTGAGE30US", "30-Year Fixed (US)")]:
+        rows = fred_series(sid)
+        if len(rows) < 2:
+            continue
+        d, latest = rows[-1]
+        _, prevw = rows[-2]
+        bps = round((latest - prevw) * 100, 1)
+        trend = "rising" if bps > 0 else "falling" if bps < 0 else "flat"
+        out.append({"tenor": label, "rate": round(latest, 2), "w1_bps": bps, "trend": trend, "date": d})
+    return out
+
+
 def main():
     path = "data/data.json"
     if not os.path.exists(path):
@@ -267,6 +294,11 @@ def main():
         data[k] = rows
 
     data["crypto"] = crypto_rows(data.get("crypto", []), cache)
+    try:
+        data["mortgage"] = fetch_mortgage_rows()
+    except Exception:
+        data["mortgage"] = data.get("mortgage", [])
+
     data["generated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     with open(path, "w") as f:
