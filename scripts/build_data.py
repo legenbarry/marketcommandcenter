@@ -83,13 +83,16 @@ def bars_for(ticker, cache):
         return cache[ticker]
     today = date.today()
     start = today - timedelta(days=380)
-    d = api(
-        f"/v2/aggs/ticker/{ticker}/range/1/day/{start.isoformat()}/{today.isoformat()}",
-        {"adjusted": "true", "sort": "asc", "limit": 5000},
-    )
-    rows = d.get("results", [])
+    try:
+        d = api(
+            f"/v2/aggs/ticker/{ticker}/range/1/day/{start.isoformat()}/{today.isoformat()}",
+            {"adjusted": "true", "sort": "asc", "limit": 5000},
+        )
+        rows = d.get("results", [])
+    except Exception:
+        rows = []
     cache[ticker] = rows
-    time.sleep(0.25)
+    time.sleep(0.12)
     return rows
 
 
@@ -139,13 +142,31 @@ def metrics_for(ticker, cache):
     }
 
 
+def sources_for(sym):
+    primary = PROXY.get(sym, sym)
+    fallbacks = {
+        "US10Y": ["IEF", "VGIT", "TLH"],
+        "US30Y": ["TLT", "VGLT"],
+        "US2Y": ["SHY", "VGSH"],
+        "DX-Y.NYB": ["UUP", "USDU"],
+        "CBOE:VIX": ["VXX", "UVXY"],
+    }
+    out = [primary]
+    out.extend(fallbacks.get(sym, []))
+    seen = set()
+    return [x for x in out if not (x in seen or seen.add(x))]
+
+
 def merge_section(seed_rows, symbols, cache):
     # Preserve name/flag/holdings-friendly metadata from seed rows
     by_sym = {r.get("sym"): r for r in seed_rows}
     out = []
     for sym in symbols:
-        src = PROXY.get(sym, sym)
-        m = metrics_for(src, cache)
+        m = None
+        for src in sources_for(sym):
+            m = metrics_for(src, cache)
+            if m:
+                break
         if not m:
             # keep stale row if available, but still non-demo/real-origin historical structure
             if sym in by_sym:
