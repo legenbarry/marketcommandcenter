@@ -1224,25 +1224,49 @@ function renderBreadth(d) {
 // ═══════════════════════════════════════════════════════
 // MORTGAGE RATES (FRED)
 // ═══════════════════════════════════════════════════════
-function loadMortgageRates(){
+async function loadMortgageRates(){
   const tbody=document.getElementById('t-mortgage');
   if(!tbody) return;
-  const rows=(DATA&&Array.isArray(DATA.mortgage))?DATA.mortgage:[];
-  if(!rows.length){
-    tbody.innerHTML='<tr><td colspan="5" class="loading">Mortgage rates pending next data refresh.</td></tr>';
-    return;
+  let rows=(DATA&&Array.isArray(DATA.mortgage))?DATA.mortgage:[];
+
+  if(rows.length){
+    try{ localStorage.setItem('mcc_mortgage_cache', JSON.stringify(rows)); }catch(e){}
+  } else {
+    try{
+      const cached=JSON.parse(localStorage.getItem('mcc_mortgage_cache')||'[]');
+      if(Array.isArray(cached) && cached.length) rows=cached;
+    }catch(e){}
   }
+
+  if(!rows.length){
+    try{
+      const parseSeries=async(id)=>{
+        const txt=await fetch(`https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`,{cache:'no-store'}).then(r=>r.text());
+        const vals=txt.trim().split('\n').slice(1).map(l=>{const [d,v]=l.split(',');return {d,v};}).filter(x=>x.v!=='.');
+        const a=vals[vals.length-1], b=vals[Math.max(0,vals.length-2)]||a;
+        return {date:a.d, rate:Number(a.v), w1_bps:Math.round((Number(a.v)-Number(b.v))*1000)/10};
+      };
+      const m15=await parseSeries('MORTGAGE15US');
+      const m30=await parseSeries('MORTGAGE30US');
+      rows=[
+        {tenor:'15-Year Fixed (US)',...m15,trend:m15.w1_bps>0?'rising':m15.w1_bps<0?'falling':'flat'},
+        {tenor:'30-Year Fixed (US)',...m30,trend:m30.w1_bps>0?'rising':m30.w1_bps<0?'falling':'flat'}
+      ];
+      try{ localStorage.setItem('mcc_mortgage_cache', JSON.stringify(rows)); }catch(e){}
+    }catch(e){}
+  }
+
   const mk=(r)=>{
-    const tr=r.w1_bps>0?'<span class="dn">▲ Rising</span>':r.w1_bps<0?'<span class="up">▼ Falling</span>':'<span class="neu">→ Flat</span>';
+    const tr=(r.w1_bps||0)>0?'<span class="dn">▲ Rising</span>':(r.w1_bps||0)<0?'<span class="up">▼ Falling</span>':'<span class="neu">→ Flat</span>';
     return `<tr>
       <td class="l"><span class="tn">${r.tenor}</span></td>
-      <td><span class="tn">${Number(r.rate).toFixed(2)}%</span></td>
+      <td><span class="tn">${Number(r.rate||0).toFixed(2)}%</span></td>
       <td>${bps(Number(r.w1_bps)||0)}</td>
       <td>${tr}</td>
       <td class="l"><span class="ts">${r.date||''}</span></td>
     </tr>`;
   };
-  tbody.innerHTML=rows.map(mk).join('');
+  tbody.innerHTML=rows.length?rows.map(mk).join(''):'<tr><td colspan="5" class="loading">—</td></tr>';
 }
 
 // ═══════════════════════════════════════════════════════

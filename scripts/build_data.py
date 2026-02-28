@@ -96,12 +96,9 @@ def bars_for(ticker, cache):
     return rows
 
 
-def metrics_for(ticker, cache):
-    rows = bars_for(ticker, cache)
-    closes = [r.get("c") for r in rows if r.get("c") is not None]
+def metrics_from_closes(closes, timestamps_ms=None):
     if len(closes) < 2:
         return None
-
     last = closes[-1]
     prev = closes[-2]
     week_base = closes[-6] if len(closes) >= 6 else closes[0]
@@ -109,14 +106,12 @@ def metrics_for(ticker, cache):
 
     jan1 = datetime(date.today().year, 1, 1, tzinfo=timezone.utc)
     ytd_base = closes[0]
-    for r in rows:
-        ts, c = r.get("t"), r.get("c")
-        if ts is None or c is None:
-            continue
-        dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
-        if dt >= jan1:
-            ytd_base = c
-            break
+    if timestamps_ms:
+        for ts, c in zip(timestamps_ms, closes):
+            dt = datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+            if dt >= jan1:
+                ytd_base = c
+                break
 
     tail = closes[-5:] if len(closes) >= 5 else closes + [closes[-1]] * (5 - len(closes))
     spark = []
@@ -140,6 +135,40 @@ def metrics_for(ticker, cache):
         "spark": spark,
         "ema_uptrend": ema_uptrend,
     }
+
+
+def yahoo_metrics(ticker):
+    try:
+        req = Request(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1y&interval=1d",
+            headers={"User-Agent": "marketcommandcenter/1.0"},
+        )
+        with urlopen(req, timeout=25) as r:
+            d = json.loads(r.read().decode("utf-8"))
+        res = (d.get("chart") or {}).get("result") or []
+        if not res:
+            return None
+        r0 = res[0]
+        ts = r0.get("timestamp") or []
+        q = (((r0.get("indicators") or {}).get("quote") or [{}])[0])
+        close = q.get("close") or []
+        pairs = [(t * 1000, c) for t, c in zip(ts, close) if c is not None]
+        if len(pairs) < 2:
+            return None
+        tms = [p[0] for p in pairs]
+        cls = [float(p[1]) for p in pairs]
+        return metrics_from_closes(cls, tms)
+    except Exception:
+        return None
+
+
+def metrics_for(ticker, cache):
+    rows = bars_for(ticker, cache)
+    closes = [r.get("c") for r in rows if r.get("c") is not None]
+    if len(closes) >= 2:
+        ts = [r.get("t") for r in rows if r.get("c") is not None and r.get("t") is not None]
+        return metrics_from_closes(closes, ts)
+    return yahoo_metrics(ticker)
 
 
 def sources_for(sym):
